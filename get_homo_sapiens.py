@@ -7,6 +7,9 @@ import urllib.parse
 import urllib.request
 from collections import defaultdict
 import numpy as np
+import warnings
+
+warnings.filterwarnings("ignore")
 
 def prep_json_uniprot(uniprot_id):
     """ This function for the preparation of json format from uniprot list """
@@ -44,7 +47,8 @@ def prep_tabular():
         df_list = []
         pdb_list = i.tolist()
         pdb_list = json.dumps(pdb_list)
-        tabular = '{entries(entry_ids: pdb_list){rcsb_id exptl_crystal_grow { pH } rcsb_binding_affinity { comp_id value type unit } rcsb_entry_container_identifiers { entry_id } polymer_entities { rcsb_entity_source_organism { rcsb_gene_name { value } } } nonpolymer_entities { nonpolymer_comp { chem_comp { formula_weight id name } } } } }'.replace("pdb_list",str(pdb_list))
+        tabular = '{entries(entry_ids: pdb_list){rcsb_id exptl_crystal_grow { pH } rcsb_binding_affinity { comp_id value type unit }   polymer_entities {uniprots { rcsb_uniprot_protein {name {value}}}    rcsb_polymer_entity_container_identifiers {reference_sequence_identifiers { database_accession database_name}} entity_poly { pdbx_seq_one_letter_code_can rcsb_sample_sequence_length } rcsb_entity_source_organism { ncbi_scientific_name rcsb_gene_name { value } } } nonpolymer_entities { nonpolymer_comp { chem_comp { formula_weight id name } } } } }'.replace("pdb_list",str(pdb_list))
+        print(tabular)
         res = get_rscb_tabular(tabular)
         res = prep_metadata(res,"rscb_tabular","tabular")
         df_list.append(res)
@@ -60,7 +64,6 @@ def prep_metadata(api_result,output_name,typ = "rscb"):
     from pandas.io.json import json_normalize
     import numpy as np
     df = pd.DataFrame()
-    print(api_result)
     alist = json.loads(api_result)
     if typ == "rscb":
         for i in range(0,len(alist["result_set"])):
@@ -68,11 +71,33 @@ def prep_metadata(api_result,output_name,typ = "rscb"):
         df.to_csv(output_name,index=False)
     else :
         df = json_normalize(alist)
+        print(alist)
         df = pd.concat((json_normalize(d) for d in df["data.entries"][0]), axis=0)
         col_names = ['exptl_crystal_grow', 'rcsb_binding_affinity','polymer_entities', 'nonpolymer_entities']
         col_names = ['rcsb_id', 'exptl_crystal_grow', 'rcsb_binding_affinity', 'rcsb_entry_container_identifiers', 'polymer_entities', 'nonpolymer_entities']
         df_last = pd.DataFrame()
         for i in range(0,len(df)):
+            entity_poly = pd.DataFrame()
+            for j in range(0,len((alist["data"]["entries"][i]["polymer_entities"]))):
+                try:
+                    seq = json_normalize((alist["data"]["entries"][i]["polymer_entities"][j]["entity_poly"]))["pdbx_seq_one_letter_code_can"]
+                except :
+                    seq = pd.DataFrame(columns = ["pdbx_seq_one_letter_code_can"])
+                try:
+                    organism_source = json_normalize(alist["data"]["entries"][i]["polymer_entities"][j]["rcsb_entity_source_organism"]) #["ncbi_scientific_name"]
+                except:
+                    organism_source = pd.DataFrame(columns=["ncbi_scientific_name"])
+                try:
+                    uniprot_name = json_normalize( alist["data"]["entries"][i]["polymer_entities"][j]["rcsb_polymer_entity_container_identifiers"]["reference_sequence_identifiers"])["database_accession"]
+                except:
+                    uniprot_name = pd.DataFrame(columns = ["database_accession"])
+                try :
+                    database_name = json_normalize( alist["data"]["entries"][i]["polymer_entities"][j]["rcsb_polymer_entity_container_identifiers"]["reference_sequence_identifiers"])["database_name"]
+                except:
+                    database_name = pd.DataFrame(columns = ["database_name"])
+                entity_poly_list = [organism_source,seq,uniprot_name,database_name]
+                result_2 = pd.concat(entity_poly_list, join='outer', axis=1).reset_index(drop=True)
+                entity_poly = entity_poly.append(result_2,ignore_index = True).reset_index(drop=True)
             try :
                 rcsb_id = json_normalize(alist["data"]["entries"][i])["rcsb_id"]
             except:
@@ -89,37 +114,79 @@ def prep_metadata(api_result,output_name,typ = "rscb"):
                 rcsb_entry_container_identifiers = json_normalize(alist["data"]["entries"][i]["rcsb_entry_container_identifiers"])
             except:
                 rcsb_entry_container_identifiers = pd.DataFrame(columns=["entry_id"])
-            try:
-                polymer_entities = json_normalize(alist["data"]["entries"][i]["polymer_entities"][0]["rcsb_entity_source_organism"][0]["rcsb_gene_name"])
-            except:
-                polymer_entities = pd.DataFrame(columns=["value"])
+            #try:
+            #    polymer_entities = json_normalize(alist["data"]["entries"][i]["polymer_entities"][0]["rcsb_entity_source_organism"][0]["rcsb_gene_name"])
+            #except:
+            #    polymer_entities = pd.DataFrame(columns=["value"])
             try:
                 nonpolymer_entities = json_normalize(alist["data"]["entries"][i]["nonpolymer_entities"][0]["nonpolymer_comp"])
             except:
                 nonpolymer_entities = pd.DataFrame(columns=["chem_comp.formula_weight","chem_comp.id","chem_comp.name"])
-            print(nonpolymer_entities) 
-            df2 = [rcsb_id, exptl_crystal_grow["pH"], rcsb_binding_affinity["comp_id"],rcsb_binding_affinity["value"],rcsb_binding_affinity["type"],rcsb_binding_affinity["unit"] , rcsb_entry_container_identifiers["entry_id"], polymer_entities["value"], nonpolymer_entities["chem_comp.formula_weight"],nonpolymer_entities["chem_comp.id"],nonpolymer_entities["chem_comp.name"]]
+            df2 = [rcsb_id, exptl_crystal_grow["pH"], rcsb_binding_affinity["comp_id"],rcsb_binding_affinity["value"],rcsb_binding_affinity["type"],rcsb_binding_affinity["unit"] , rcsb_entry_container_identifiers["entry_id"],nonpolymer_entities["chem_comp.formula_weight"],nonpolymer_entities["chem_comp.id"],nonpolymer_entities["chem_comp.name"], entity_poly["pdbx_seq_one_letter_code_can"], entity_poly["ncbi_scientific_name"],entity_poly["database_accession"],entity_poly["database_name"]]
             result_1 = pd.concat(df2, join='outer', axis=1).reset_index(drop=True)
             df_last = df_last.append(result_1,ignore_index=True)
         df = df_last.reset_index(drop=True)
+        print(df)
     return df 
 
 
 def get_uniprotid_from_pdbid():
-    import Bio.SwissProt as sp
+    import os
+    import time
     df = pd.read_csv("metadata.csv")
     pdb_list = df["identifier"].tolist()
-    pdb_str = "ids="+ ",".join(pdb_list)
-     
+    sub_pdb_list = np.array_split(pdb_list,100)
+    df_res = pd.DataFrame()
+    for i in sub_pdb_list:
+        df_list = []
+        pdb_str = "ids="+ ",".join(i.tolist())
+        os.system(" curl --request POST 'https://rest.uniprot.org/idmapping/run' --form 'ids=%s' --form 'from=%s' --form 'to=%s' > ping.txt "%(i,"PDB","UniProtKB"))
+        with open("ping.txt") as p:
+            time.sleep(1)
+            d = json.load(p)["jobId"]
+            print(d)
+            os.system(" curl -s  'https://rest.uniprot.org/idmapping/stream/%s' > uniprot_out"%(d))
+            with open("uniprot_out") as uniprot_out:
+                uniprot_out_json = pd.json_normalize(json.load(uniprot_out)["results"])
+                df_list.append(df_res)
+                df_list.append(uniprot_out_json)
+                df_res = pd.concat(df_list)
+                df_res.reset_index(drop=True)
+        print(df_res)
+    df_res.to_csv("pdb_id_to_uniprot.csv")
+        #break
 
 
+def get_swiss_index(organism_name):
+    import tarfile
+    import os
+    organism_swiss = {"Homo Sapiens":"9606","Mus Musculus":"10090","Caenorhabditis elegans":"6239","Escherichia coli":"83333","Arabidopsis thaliana":"3702","Drosophila melanogaster":"7227","Saccharomyces cerevisiae":"559292","Schizosaccharomyces pombe":"284812","Caulobacter vibrioides":"190650","Mycobacterium tuberculosis":"83332","Pseudomonas aeruginosa":"208964","Staphylococcus aureus":"93061","Plasmodium falciparum":"36329"} 
+    if not os.path.exists("%s_meta.tar.gz"%(organism_swiss[organism_name])): 
+        os.system("wget https://swissmodel.expasy.org/repository/download/core_species/%s_meta.tar.gz"%(organism_swiss[organism_name]))
+    tar = tarfile.open("%s_meta.tar.gz"%(organism_swiss[organism_name]),"r:gz")
+    for member in tar.getmembers():
+        if member.name == "SWISS-MODEL_Repository/INDEX":
+            f = tar.extractfile(member)
+            if f is not None:
+                df = pd.read_csv(f,comment = "#", sep = "\t")
+                unique_uniprot = df["UniProtKB_ac"].unique()
+                rscb_tabular = pd.read_csv("rscb_tabular.csv")
+                print(rscb_tabular)
+                rscb_tabular_uniprot_unique = rscb_tabular["database_accession"].unique()
+                for i in unique_uniprot:
+                    i = i.split("-")[0]
+                    print(i)
+                    if i not in rscb_tabular_uniprot_unique:
+                        sub_uniprot = df[df["UniProtKB_ac"]==i]
+                        print(sub_uniprot[:1])
 
 def main():
     #a = prep_organism("Homo Sapiens",60000)
     #b = get_rscb(a)
-    #c = prep_tabular()
     #prep_metadata(b,"metadata.csv")
+    #c = prep_tabular()
     #c.to_csv("rscb_tabular.csv")
-    get_uniprotid_from_pdbid()
+    #get_uniprotid_from_pdbid()
+    #get_swiss_index("Homo Sapiens")
 main()
 
