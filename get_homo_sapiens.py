@@ -180,6 +180,35 @@ def get_swiss_index(organism_name):
                         sub_uniprot = df[df["UniProtKB_ac"]==i]
                         print(sub_uniprot[:1])
 
+
+
+def analysis_rscb_tabular(rscb_tabular_file):
+    rscb_tabular = pd.read_csv(rscb_tabular_file, index_col=0)
+    unique_uniprot = rscb_tabular["database_accession"].unique()
+    for i in range(len(unique_uniprot)):
+        print(i)
+        k = rscb_tabular.loc[rscb_tabular["database_accession"]==unique_uniprot[i]].reset_index(drop=True)
+        if  k["type"].str.contains("IC50").any():
+            k= k.loc[k["type"]=="IC50"].reset_index(drop=True)
+            k=k.sort_values("value").reset_index(drop=True)
+            print(k.loc[k["type"]=="IC50"].loc[0,:])
+
+        elif  k["type"].str.contains("Ki").any():
+            k= k.loc[k["type"]=="Ki"].reset_index(drop=True)
+            k=k.sort_values("value").reset_index(drop=True)
+            print(k.loc[k["type"]=="Ki"].loc[0,:])
+
+        elif  k["type"].str.contains("Kd").any():
+            k= k.loc[k["type"]=="Kd"].reset_index(drop=True)
+            k=k.sort_values("value").reset_index(drop=True)
+            print(k.loc[k["type"]=="Kd"].loc[0,:])
+        elif "True" in k["comp_id"].notna():
+            print(k)
+        elif
+            
+
+
+
 def main():
     #a = prep_organism("Homo Sapiens",60000)
     #b = get_rscb(a)
@@ -188,5 +217,6 @@ def main():
     #c.to_csv("rscb_tabular.csv")
     #get_uniprotid_from_pdbid()
     #get_swiss_index("Homo Sapiens")
+    analysis_rscb_tabular("rscb_tabular.csv")
 main()
 
